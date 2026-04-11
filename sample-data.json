@@ -1,0 +1,51 @@
+// Sample data for Firestore
+// Copy and paste these documents into Firebase Console → Firestore
+
+// WORKSITES COLLECTION
+// Document ID: site1
+{
+  "name": "Construction Site A",
+  "address": "123 Main Street, Downtown",
+  "latitude": 40.7128,
+  "longitude": -74.0060,
+  "entryRadius": 1.0,
+  "exitRadius": 2.0
+}
+
+// Document ID: site2
+{
+  "name": "Warehouse B",
+  "address": "456 Industrial Ave, Industrial District",
+  "latitude": 40.7589,
+  "longitude": -73.9851,
+  "entryRadius": 0.5,
+  "exitRadius": 1.5
+}
+
+// EMPLOYEES COLLECTION
+// Document ID: emp1 (should match Firebase Auth UID)
+{
+  "name": "John Smith",
+  "email": "employee1@company.com"
+}
+
+// Document ID: emp2 (should match Firebase Auth UID)
+{
+  "name": "Sarah Johnson",
+  "email": "employee2@company.com"
+}
+
+// ASSIGNMENTS COLLECTION
+// Document ID: assign1
+{
+  "employeeId": "emp1", // Replace with actual Firebase Auth UID
+  "date": "2024-01-15",
+  "worksiteIds": ["site1", "site2"]
+}
+
+// Document ID: assign2
+{
+  "employeeId": "emp2", // Replace with actual Firebase Auth UID
+  "date": "2024-01-15",
+  "worksiteIds": ["site1"]
+}
