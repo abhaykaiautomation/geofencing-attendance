@@ -52,6 +52,12 @@ export default function Home() {
             Demo (Sample Data)
           </Link>
           <Link
+            href="/operator"
+            className="block w-full bg-teal-600 text-white py-3 px-4 rounded-lg hover:bg-teal-700 transition-colors"
+          >
+            Operator — VIN Scanner
+          </Link>
+          <Link
             href="/test"
             className="block w-full bg-orange-600 text-white py-3 px-4 rounded-lg hover:bg-orange-700 transition-colors"
           >
