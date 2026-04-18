@@ -304,7 +304,7 @@ function ProjectsTab({ employees }: { employees: Employee[] }) {
     loadMembers(id);
   };
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleAdd = async (e: { preventDefault(): void }) => {
     e.preventDefault();
     const res = await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description, clientName, status, startDate, endDate }) });
     if (res.ok) { setName(''); setDesc(''); setClient(''); setStatus('active'); setStart(''); setEnd(''); loadProjects(); }
@@ -327,7 +327,7 @@ function ProjectsTab({ employees }: { employees: Employee[] }) {
     loadProjects();
   };
 
-  const handleAssign = async (e: React.FormEvent, projectId: number) => {
+  const handleAssign = async (e: { preventDefault(): void }, projectId: number) => {
     e.preventDefault();
     if (!assignEmpId) return;
     await fetch('/api/projects/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employeeId: assignEmpId, projectId, role: assignRole }) });
@@ -551,8 +551,8 @@ const TABS = [
 ];
 
 export default function AdminPage() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
+  useAuth();
+  useRouter();
   const [activeTab, setActiveTab] = useState('worksites');
   const [worksites, setWorksites]   = useState<Worksite[]>([]);
   const [employees, setEmployees]   = useState<Employee[]>([]);
@@ -573,20 +573,8 @@ export default function AdminPage() {
       ]);
       if (wsRes.ok) setWorksites(await wsRes.json());
       if (empRes.ok) setEmployees(await empRes.json());
-      if (asgRes.ok) {
-        const raw = await asgRes.json();
-        setAssignments(raw.map((a: any) => ({ id: a.id, employeeId: a.employee_id, date: a.assignment_date, worksiteIds: a.worksite_ids })));
-      }
-      if (sesRes.ok) {
-        const raw = await sesRes.json();
-        setSessions(raw.map((s: any) => ({
-          id: s.id, employeeId: s.employee_id, worksiteId: s.worksite_id,
-          checkInTime: s.check_in_time, checkOutTime: s.check_out_time,
-          durationMinutes: s.duration_minutes,
-          checkInLocation: s.check_in_latitude !== undefined ? { lat: s.check_in_latitude, lng: s.check_in_longitude } : undefined,
-          checkOutLocation: s.check_out_latitude !== undefined ? { lat: s.check_out_latitude, lng: s.check_out_longitude } : undefined,
-        })));
-      }
+      if (asgRes.ok) setAssignments(await asgRes.json());
+      if (sesRes.ok) setSessions(await sesRes.json());
     } catch (err) { console.error('fetchData error', err); }
     setDataLoading(false);
   };
