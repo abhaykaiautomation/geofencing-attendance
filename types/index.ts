@@ -43,6 +43,18 @@ export interface Project {
   memberCount?: number;
 }
 
+export interface TimeEntry {
+  id: number;
+  employeeId: string;
+  projectId: number;
+  projectName?: string;
+  workDate: string;   // YYYY-MM-DD
+  hours: number;
+  timeType: string;
+  billable: boolean;
+  notes?: string;
+}
+
 export interface EmployeeProject {
   id: number;
   employeeId: string;
