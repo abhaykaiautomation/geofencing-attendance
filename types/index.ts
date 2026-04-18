@@ -31,3 +31,25 @@ export interface Employee {
   name: string;
   email: string;
 }
+
+export interface Project {
+  id: number;
+  name: string;
+  description?: string;
+  clientName?: string;
+  status: 'active' | 'completed' | 'on_hold' | 'cancelled';
+  startDate?: string;
+  endDate?: string;
+  memberCount?: number;
+}
+
+export interface EmployeeProject {
+  id: number;
+  employeeId: string;
+  employeeName?: string;
+  employeeEmail?: string;
+  projectId: number;
+  projectName?: string;
+  role?: string;
+  assignedAt?: string;
+}

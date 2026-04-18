@@ -43,6 +43,27 @@ CREATE TABLE attendance_sessions (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE projects (
+  id           SERIAL PRIMARY KEY,
+  name         VARCHAR(255) NOT NULL,
+  description  TEXT,
+  client_name  VARCHAR(255),
+  status       VARCHAR(50) NOT NULL DEFAULT 'active',
+  start_date   DATE,
+  end_date     DATE,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE employee_projects (
+  id          SERIAL PRIMARY KEY,
+  employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  role        VARCHAR(255),
+  assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(employee_id, project_id)
+);
+
 CREATE INDEX idx_employees_email ON employees(email);
 CREATE INDEX idx_assignments_employee_date ON assignments(employee_id, assignment_date);
 CREATE INDEX idx_attendance_employee_date ON attendance_sessions(employee_id, DATE(check_in_time));

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Worksite, AttendanceSession } from '../../types';
+import { Worksite, AttendanceSession, EmployeeProject } from '../../types';
 import { useRouter } from 'next/navigation';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -59,6 +59,7 @@ export default function EmployeePage() {
   const [infoOpen,  setInfoOpen]      = useState(true);
   const [status,    setStatus]        = useState<Status>('Draft');
   const [description, setDescription] = useState('');
+  const [myProjects, setMyProjects]   = useState<EmployeeProject[]>([]);
   const [selected,  setSelected]      = useState<Set<number>>(new Set());
 
   const days = useMemo(() => weekDaysOf(weekStart), [weekStart]);
@@ -80,12 +81,14 @@ export default function EmployeePage() {
         });
         const employee = await empRes.json();
 
-        const [sessRes, wsRes] = await Promise.all([
+        const [sessRes, wsRes, projRes] = await Promise.all([
           fetch(`/api/attendance?employeeId=${employee.id}`),
           fetch('/api/worksites'),
+          fetch(`/api/projects/members?employeeId=${employee.id}`),
         ]);
-        if (sessRes.ok) setSessions(await sessRes.json());
-        if (wsRes.ok)   setWorksites(await wsRes.json());
+        if (sessRes.ok)  setSessions(await sessRes.json());
+        if (wsRes.ok)    setWorksites(await wsRes.json());
+        if (projRes.ok)  setMyProjects(await projRes.json());
       } catch (e) {
         console.error(e);
       } finally {
@@ -277,6 +280,24 @@ export default function EmployeePage() {
                   className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
+              <div className="col-span-3 border-t border-gray-100 pt-3">
+                <p className="text-xs text-gray-400 mb-2">Assigned Projects</p>
+                {myProjects.length === 0
+                  ? <p className="text-xs text-gray-400">No projects assigned.</p>
+                  : (
+                    <div className="flex flex-wrap gap-2">
+                      {myProjects.map(p => (
+                        <span key={p.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 inline-block" />
+                          {p.projectName}
+                          {p.role && <span className="text-indigo-400">· {p.role}</span>}
+                        </span>
+                      ))}
+                    </div>
+                  )
+                }
+              </div>
+
               <div>
                 <p className="text-xs text-gray-400 mb-1">Attachments (0)</p>
                 <button className="px-3 py-1 text-xs border border-teal-600 text-teal-600 rounded hover:bg-teal-50 flex items-center gap-1">

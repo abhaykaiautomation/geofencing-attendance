@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Worksite, Employee, Assignment, AttendanceSession } from '../../types';
+import { Worksite, Employee, Assignment, AttendanceSession, Project, EmployeeProject } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 
 // Type for attendance session input
@@ -182,6 +182,275 @@ function EditEmployeeForm({ employee, onUpdate }: { employee: Employee, onUpdate
       <button className="text-green-600" type="submit">Save</button>
       <button className="text-gray-500" type="button" onClick={() => setEditing(false)}>Cancel</button>
     </form>
+  );
+}
+
+// ── Projects Tab ─────────────────────────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, string> = {
+  active:    'bg-green-100 text-green-700',
+  completed: 'bg-blue-100 text-blue-700',
+  on_hold:   'bg-yellow-100 text-yellow-700',
+  cancelled: 'bg-red-100 text-red-700',
+};
+
+function ProjectsTab({ employees }: { employees: Employee[] }) {
+  const [projects, setProjects]           = useState<Project[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [expandedId, setExpandedId]       = useState<number | null>(null);
+  const [members, setMembers]             = useState<Record<number, EmployeeProject[]>>({});
+  const [editingId, setEditingId]         = useState<number | null>(null);
+
+  // Add form
+  const [name, setName]           = useState('');
+  const [description, setDesc]    = useState('');
+  const [clientName, setClient]   = useState('');
+  const [status, setStatus]       = useState('active');
+  const [startDate, setStart]     = useState('');
+  const [endDate, setEnd]         = useState('');
+
+  // Edit form
+  const [editName, setEditName]       = useState('');
+  const [editDesc, setEditDesc]       = useState('');
+  const [editClient, setEditClient]   = useState('');
+  const [editStatus, setEditStatus]   = useState('active');
+  const [editStart, setEditStart]     = useState('');
+  const [editEnd, setEditEnd]         = useState('');
+
+  // Assign form
+  const [assignEmpId, setAssignEmpId] = useState('');
+  const [assignRole, setAssignRole]   = useState('');
+
+  useEffect(() => { loadProjects(); }, []);
+
+  const loadProjects = async () => {
+    setLoading(true);
+    const res = await fetch('/api/projects');
+    if (res.ok) setProjects(await res.json());
+    setLoading(false);
+  };
+
+  const loadMembers = async (projectId: number) => {
+    const res = await fetch(`/api/projects/members?projectId=${projectId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setMembers(prev => ({ ...prev, [projectId]: data }));
+    }
+  };
+
+  const toggleExpand = (id: number) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    loadMembers(id);
+  };
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description, clientName, status, startDate, endDate }),
+    });
+    if (res.ok) { setName(''); setDesc(''); setClient(''); setStatus('active'); setStart(''); setEnd(''); loadProjects(); }
+  };
+
+  const startEdit = (p: Project) => {
+    setEditingId(p.id);
+    setEditName(p.name);
+    setEditDesc(p.description ?? '');
+    setEditClient(p.clientName ?? '');
+    setEditStatus(p.status);
+    setEditStart(p.startDate ?? '');
+    setEditEnd(p.endDate ?? '');
+  };
+
+  const handleUpdate = async (id: number) => {
+    await fetch('/api/projects', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name: editName, description: editDesc, clientName: editClient, status: editStatus, startDate: editStart, endDate: editEnd }),
+    });
+    setEditingId(null);
+    loadProjects();
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Delete this project? All employee assignments will also be removed.')) return;
+    await fetch(`/api/projects?id=${id}`, { method: 'DELETE' });
+    loadProjects();
+  };
+
+  const handleAssign = async (e: React.FormEvent, projectId: number) => {
+    e.preventDefault();
+    if (!assignEmpId) return;
+    await fetch('/api/projects/members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId: assignEmpId, projectId, role: assignRole }),
+    });
+    setAssignEmpId(''); setAssignRole('');
+    loadMembers(projectId);
+    loadProjects();
+  };
+
+  const handleRemoveMember = async (employeeId: string, projectId: number) => {
+    await fetch(`/api/projects/members?employeeId=${employeeId}&projectId=${projectId}`, { method: 'DELETE' });
+    loadMembers(projectId);
+    loadProjects();
+  };
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Loading projects…</div>;
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold mb-3">Project Management</h2>
+
+      {/* Add project form */}
+      <form onSubmit={handleAdd} className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-5">
+        <p className="text-sm font-medium text-gray-600 mb-3">Add New Project</p>
+        <div className="flex flex-wrap gap-2">
+          <input required placeholder="Project name *" value={name} onChange={e => setName(e.target.value)}
+            className="border px-2 py-1 rounded text-sm flex-1 min-w-[180px]" />
+          <input placeholder="Client name" value={clientName} onChange={e => setClient(e.target.value)}
+            className="border px-2 py-1 rounded text-sm w-36" />
+          <select value={status} onChange={e => setStatus(e.target.value)}
+            className="border px-2 py-1 rounded text-sm">
+            <option value="active">Active</option>
+            <option value="on_hold">On Hold</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <input type="date" placeholder="Start date" value={startDate} onChange={e => setStart(e.target.value)}
+            className="border px-2 py-1 rounded text-sm" />
+          <input type="date" placeholder="End date" value={endDate} onChange={e => setEnd(e.target.value)}
+            className="border px-2 py-1 rounded text-sm" />
+        </div>
+        <div className="flex gap-2 mt-2">
+          <input placeholder="Description" value={description} onChange={e => setDesc(e.target.value)}
+            className="border px-2 py-1 rounded text-sm flex-1" />
+          <button type="submit" className="bg-indigo-600 text-white px-4 py-1 rounded text-sm hover:bg-indigo-700">
+            Add Project
+          </button>
+        </div>
+      </form>
+
+      {/* Projects list */}
+      <div className="space-y-3">
+        {projects.length === 0 && <p className="text-gray-400 text-sm">No projects yet.</p>}
+        {projects.map(p => (
+          <div key={p.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+
+            {/* Project row */}
+            {editingId === p.id ? (
+              <div className="p-3 bg-yellow-50 flex flex-wrap gap-2 items-center">
+                <input value={editName} onChange={e => setEditName(e.target.value)}
+                  className="border px-2 py-1 rounded text-sm flex-1 min-w-[160px]" />
+                <input value={editClient} onChange={e => setEditClient(e.target.value)}
+                  placeholder="Client" className="border px-2 py-1 rounded text-sm w-32" />
+                <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
+                  className="border px-2 py-1 rounded text-sm">
+                  <option value="active">Active</option>
+                  <option value="on_hold">On Hold</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <input type="date" value={editStart} onChange={e => setEditStart(e.target.value)}
+                  className="border px-2 py-1 rounded text-sm" />
+                <input type="date" value={editEnd} onChange={e => setEditEnd(e.target.value)}
+                  className="border px-2 py-1 rounded text-sm" />
+                <input value={editDesc} onChange={e => setEditDesc(e.target.value)}
+                  placeholder="Description" className="border px-2 py-1 rounded text-sm w-48" />
+                <button onClick={() => handleUpdate(p.id)} className="text-green-600 text-sm font-medium">Save</button>
+                <button onClick={() => setEditingId(null)} className="text-gray-500 text-sm">Cancel</button>
+              </div>
+            ) : (
+              <div className="p-3 flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <button onClick={() => toggleExpand(p.id)} className="text-gray-400 hover:text-gray-600 text-lg leading-none w-5 shrink-0">
+                    {expandedId === p.id ? '▾' : '▸'}
+                  </button>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-800 truncate">{p.name}</p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {p.clientName && <span className="mr-2">{p.clientName}</span>}
+                      {p.startDate && <span>{p.startDate}{p.endDate ? ` → ${p.endDate}` : ''}</span>}
+                      {p.description && <span className="ml-2 italic">{p.description}</span>}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[p.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {p.status.replace('_', ' ')}
+                  </span>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                    {p.memberCount} {p.memberCount === 1 ? 'member' : 'members'}
+                  </span>
+                  <button onClick={() => startEdit(p)} className="text-blue-600 text-sm">Edit</button>
+                  <button onClick={() => handleDelete(p.id)} className="text-red-600 text-sm">Delete</button>
+                </div>
+              </div>
+            )}
+
+            {/* Expanded: members */}
+            {expandedId === p.id && (
+              <div className="border-t border-gray-100 bg-gray-50 p-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Team Members</p>
+
+                {/* Member list */}
+                {(members[p.id] ?? []).length === 0
+                  ? <p className="text-xs text-gray-400 mb-3">No members assigned yet.</p>
+                  : (
+                    <table className="w-full text-xs mb-3">
+                      <thead>
+                        <tr className="text-gray-500">
+                          <th className="text-left py-1 pr-4">Employee</th>
+                          <th className="text-left py-1 pr-4">Email</th>
+                          <th className="text-left py-1 pr-4">Role</th>
+                          <th className="text-left py-1">Assigned</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(members[p.id] ?? []).map(m => (
+                          <tr key={m.id} className="border-t border-gray-100">
+                            <td className="py-1.5 pr-4 font-medium text-gray-700">{m.employeeName}</td>
+                            <td className="py-1.5 pr-4 text-gray-500">{m.employeeEmail}</td>
+                            <td className="py-1.5 pr-4 text-gray-600">{m.role ?? '—'}</td>
+                            <td className="py-1.5 text-gray-400">{m.assignedAt ? new Date(m.assignedAt).toLocaleDateString() : '—'}</td>
+                            <td className="py-1.5 pl-3">
+                              <button onClick={() => handleRemoveMember(m.employeeId, p.id)}
+                                className="text-red-500 hover:text-red-700 text-xs">Remove</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                }
+
+                {/* Assign employee form */}
+                <form onSubmit={e => handleAssign(e, p.id)} className="flex gap-2 items-center flex-wrap">
+                  <select value={assignEmpId} onChange={e => setAssignEmpId(e.target.value)}
+                    className="border px-2 py-1 rounded text-xs flex-1 min-w-[160px]">
+                    <option value="">— Select employee —</option>
+                    {employees
+                      .filter(emp => !(members[p.id] ?? []).some(m => m.employeeId === emp.id))
+                      .map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.email})</option>)
+                    }
+                  </select>
+                  <input placeholder="Role (optional)" value={assignRole} onChange={e => setAssignRole(e.target.value)}
+                    className="border px-2 py-1 rounded text-xs w-36" />
+                  <button type="submit" disabled={!assignEmpId}
+                    className="bg-indigo-600 text-white px-3 py-1 rounded text-xs disabled:opacity-40 hover:bg-indigo-700">
+                    Assign
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -558,6 +827,12 @@ export default function AdminPage() {
             Monitoring
           </button>
           <button
+            onClick={() => setActiveTab('projects')}
+            className={`px-4 py-2 rounded ${activeTab === 'projects' ? 'bg-indigo-600 text-white' : 'bg-gray-200'}`}
+          >
+            Projects
+          </button>
+          <button
             onClick={() => setActiveTab('reports')}
             className={`px-4 py-2 rounded ${activeTab === 'reports' ? 'bg-indigo-600 text-white' : 'bg-gray-200'}`}
           >
@@ -641,6 +916,10 @@ export default function AdminPage() {
             updateAttendanceSession={updateAttendanceSession}
             deleteSession={deleteSession}
           />
+        )}
+
+        {activeTab === 'projects' && (
+          <ProjectsTab employees={employees} />
         )}
 
         {activeTab === 'reports' && (
