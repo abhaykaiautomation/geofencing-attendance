@@ -7,8 +7,8 @@ const mapProject = (r: any) => ({
   description: r.description ?? null,
   clientName:  r.client_name ?? null,
   status:      r.status,
-  startDate:   r.start_date ? String(r.start_date).split('T')[0] : null,
-  endDate:     r.end_date   ? String(r.end_date).split('T')[0]   : null,
+  startDate:   r.start_date ?? null,
+  endDate:     r.end_date   ?? null,
   memberCount: Number(r.member_count ?? 0),
   createdAt:   r.created_at,
 });

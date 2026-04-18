@@ -1,4 +1,9 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
+
+// Return DATE columns as plain "YYYY-MM-DD" strings instead of JS Date objects.
+// Without this, pg converts DATE → Date object, and timezone offsets can shift
+// the value by a day, or produce strings that don't match toISOString() output.
+types.setTypeParser(1082, (val: string) => val);
 
 function parseDatabaseUrl(url: string) {
   const regex = /postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/;

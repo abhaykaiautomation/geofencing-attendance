@@ -47,8 +47,8 @@ export async function GET(request: Request) {
         projectName: r.project_name,
         status:      r.status,
         clientName:  r.client_name ?? null,
-        startDate:   r.start_date ? String(r.start_date).split('T')[0] : null,
-        endDate:     r.end_date   ? String(r.end_date).split('T')[0]   : null,
+        startDate:   r.start_date ?? null,
+        endDate:     r.end_date   ?? null,
         role:        r.role ?? null,
         assignedAt:  r.assigned_at,
       })));

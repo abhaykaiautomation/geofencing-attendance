@@ -61,9 +61,7 @@ export async function GET(request: Request) {
   const mapRow = (row: any) => ({
     id: row.id,
     employeeId: row.employee_id,
-    date: row.assignment_date instanceof Date
-      ? row.assignment_date.toISOString().split('T')[0]
-      : String(row.assignment_date).split('T')[0],
+    date: row.assignment_date,   // plain string after pg type parser override in lib/db.ts
     worksiteIds: row.worksite_ids ?? [],
   });
 

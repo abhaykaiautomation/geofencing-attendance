@@ -6,7 +6,7 @@ const mapRow = (r: any) => ({
   employeeId:  r.employee_id,
   projectId:   r.project_id,
   projectName: r.project_name ?? null,
-  workDate:    String(r.work_date).split('T')[0],
+  workDate:    r.work_date,   // pg returns DATE as plain string after type parser override
   hours:       parseFloat(r.hours),
   timeType:    r.time_type,
   billable:    r.billable,
