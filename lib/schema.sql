@@ -47,18 +47,3 @@ CREATE INDEX idx_employees_email ON employees(email);
 CREATE INDEX idx_assignments_employee_date ON assignments(employee_id, assignment_date);
 CREATE INDEX idx_attendance_employee_date ON attendance_sessions(employee_id, DATE(check_in_time));
 CREATE INDEX idx_attendance_worksite ON attendance_sessions(worksite_id);
-
-CREATE TABLE current_vehicle_locations (
-  id          SERIAL PRIMARY KEY,
-  vin         VARCHAR(17) NOT NULL,
-  latitude    DECIMAL(10, 8) NOT NULL,
-  longitude   DECIMAL(11, 8) NOT NULL,
-  accuracy    DECIMAL(10, 2),
-  scanned_by  VARCHAR(255),
-  worksite_id INTEGER REFERENCES worksites(id),
-  notes       TEXT,
-  scanned_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_vehicle_vin        ON current_vehicle_locations(vin);
-CREATE INDEX idx_vehicle_scanned_at ON current_vehicle_locations(scanned_at DESC);
