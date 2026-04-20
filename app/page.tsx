@@ -1,5 +1,8 @@
 'use client';
 import Link from 'next/link';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '../contexts/AuthContext';
 
 const NAV_CARDS = [
   {
@@ -48,6 +51,15 @@ const FEATURES = [
 ];
 
 export default function Home() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) router.replace('/login');
+    if (!loading && user) router.replace(user.email?.includes('admin') ? '/admin' : '/employee');
+  }, [user, loading, router]);
+
+  // Show nothing while auth state resolves
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-base)' }}>
 

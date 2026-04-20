@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { EmployeeProject, TimeEntry } from '../../types';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '../../contexts/AuthContext';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function getMonday(d: Date): Date {
@@ -53,8 +54,14 @@ const STATUS_STYLE: Record<Status,{bg:string,color:string}> = {
 
 // ── component ──────────────────────────────────────────────────────────────────
 export default function EmployeePage() {
-  const user   = { email:'test@example.com', name:'Test User', id:'ded00872-16ce-43a1-a6d2-35476da36876' };
+  const { user: authUser, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && !authUser) router.replace('/login');
+  }, [authUser, authLoading, router]);
+
+  const user = { email: authUser?.email ?? '', name: authUser?.displayName ?? authUser?.email ?? 'Employee', id: 'ded00872-16ce-43a1-a6d2-35476da36876' };
 
   const [weekStart, setWeekStart]     = useState<Date>(() => getMonday(new Date()));
   const [myProjects, setMyProjects]   = useState<EmployeeProject[]>([]);
@@ -223,6 +230,13 @@ export default function EmployeePage() {
           <button className="px-3 py-1.5 text-xs rounded-lg"
             style={{background:C.elev, color:C.t2, border:`1px solid ${C.border}`}}>
             Print
+          </button>
+          <div style={{width:'1px', height:'16px', background:C.border}}/>
+          <span className="text-xs" style={{color:C.t3}}>{authUser?.email}</span>
+          <button onClick={async () => { await signOut(); router.replace('/login'); }}
+            className="px-3 py-1.5 text-xs rounded-lg transition-colors"
+            style={{background:C.elev, color:C.t2, border:`1px solid ${C.border}`}}>
+            Sign out
           </button>
         </div>
       </div>

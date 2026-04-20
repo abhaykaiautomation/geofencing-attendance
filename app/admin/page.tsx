@@ -566,8 +566,12 @@ const TABS = [
 ];
 
 export default function AdminPage() {
-  useAuth();
-  useRouter();
+  const { user, signOut } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!user) router.replace('/login');
+  }, [user, router]);
   const [activeTab, setActiveTab] = useState('worksites');
   const [worksites, setWorksites]   = useState<Worksite[]>([]);
   const [employees, setEmployees]   = useState<Employee[]>([]);
@@ -644,7 +648,12 @@ export default function AdminPage() {
         <span style={{ color: C.border, fontSize: '1.2rem' }}>|</span>
         <span style={{ fontSize: '0.875rem', fontWeight: 600, color: C.t1 }}>Admin Dashboard</span>
         <span style={{ flex: 1 }} />
+        <span style={{ fontSize: '0.75rem', color: C.t3, marginRight: 4 }}>{user?.email}</span>
         <a href="/employee" style={{ fontSize: '0.75rem', color: C.t2, textDecoration: 'none', padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev }}>Employee View</a>
+        <button onClick={async () => { await signOut(); router.replace('/login'); }}
+          style={{ fontSize: '0.75rem', color: C.t2, padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev, cursor: 'pointer' }}>
+          Sign out
+        </button>
       </header>
 
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '28px 20px' }}>
