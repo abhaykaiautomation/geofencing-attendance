@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Worksite, Employee, Assignment, AttendanceSession, Project, EmployeeProject } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
+import ChangePasswordModal from '../../components/ChangePasswordModal';
 
 const C = {
   base:     '#09090f',
@@ -498,6 +499,62 @@ function RadiusInput({ label, value, onChange, required }: { label: string; valu
   );
 }
 
+// ── Add User Form (creates Firebase Auth + DB employee) ───────────────────────
+function AddUserForm({ onDone }: { onDone: () => void }) {
+  const [name, setName]       = useState('');
+  const [email, setEmail]     = useState('');
+  const [password, setPass]   = useState('');
+  const [role, setRole]       = useState('employee');
+  const [error, setError]     = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: { preventDefault(): void }) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const res = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password, role }),
+    });
+    const data = await res.json();
+    setLoading(false);
+    if (!res.ok) { setError(data.error ?? 'Failed to create user'); return; }
+    setName(''); setEmail(''); setPass(''); setRole('employee'); setError('');
+    onDone();
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ ...cardSx, padding: 16, marginBottom: 16 }}>
+      <p style={{ fontSize: '0.75rem', fontWeight: 600, color: C.t2, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Add New User</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: error ? 10 : 0 }}>
+        <input required placeholder="Full name" value={name} onChange={e => setName(e.target.value)}
+          style={{ ...inputSx, flex: 1, minWidth: 160 }} />
+        <input required type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)}
+          style={{ ...inputSx, flex: 1, minWidth: 200 }} />
+        <input required type="password" placeholder="Password (min 6 chars)" value={password} onChange={e => setPass(e.target.value)}
+          style={{ ...inputSx, flex: 1, minWidth: 180 }} />
+        <select value={role} onChange={e => setRole(e.target.value)} style={inputSx}>
+          <option value="employee">Employee</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button type="submit" disabled={loading}
+          style={{ ...btnPrimary(C.indigo), opacity: loading ? 0.6 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
+          {loading ? 'Creating…' : 'Create User'}
+        </button>
+      </div>
+      {error && (
+        <div style={{ background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 8, padding: '8px 12px', marginTop: 8 }}>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#f87171' }}>{error}</p>
+        </div>
+      )}
+      <p style={{ fontSize: '0.72rem', color: C.t3, margin: '8px 0 0' }}>
+        Creates a login account + employee record. Admin email should contain "admin".
+      </p>
+    </form>
+  );
+}
+
 // ── Worksite Forms ────────────────────────────────────────────────────────────
 function AddWorksiteForm({ onAdd }: { onAdd: (w: Omit<Worksite, 'id'>) => void }) {
   const [name, setName] = useState('');
@@ -578,6 +635,7 @@ export default function AdminPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [sessions, setSessions]     = useState<AttendanceSession[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [showChangePwd, setShowChangePwd] = useState(false);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -636,6 +694,7 @@ export default function AdminPage() {
   );
 
   return (
+    <>
     <div style={{ minHeight: '100vh', background: C.base }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
@@ -650,6 +709,10 @@ export default function AdminPage() {
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: '0.75rem', color: C.t3, marginRight: 4 }}>{user?.email}</span>
         <a href="/employee" style={{ fontSize: '0.75rem', color: C.t2, textDecoration: 'none', padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev }}>Employee View</a>
+        <button onClick={() => setShowChangePwd(true)}
+          style={{ fontSize: '0.75rem', color: C.t2, padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev, cursor: 'pointer' }}>
+          Change Password
+        </button>
         <button onClick={async () => { await signOut(); router.replace('/login'); }}
           style={{ fontSize: '0.75rem', color: C.t2, padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev, cursor: 'pointer' }}>
           Sign out
@@ -706,7 +769,7 @@ export default function AdminPage() {
         {activeTab === 'employees' && (
           <div>
             <p style={{ fontSize: '1rem', fontWeight: 700, color: C.t1, marginBottom: 16 }}>Employee Management</p>
-            <AddEmployeeForm onAdd={addEmployee} />
+            <AddUserForm onDone={fetchData} />
             <div style={cardSx}>
               <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}` }}>
                 <p style={{ fontSize: '0.75rem', fontWeight: 600, color: C.t2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>All Employees ({employees.length})</p>
@@ -781,5 +844,7 @@ export default function AdminPage() {
         )}
       </div>
     </div>
+    {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+    </>
   );
 }

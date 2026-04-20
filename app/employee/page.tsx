@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { EmployeeProject, TimeEntry } from '../../types';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
+import ChangePasswordModal from '../../components/ChangePasswordModal';
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function getMonday(d: Date): Date {
@@ -74,6 +75,7 @@ export default function EmployeePage() {
   const [editCell, setEditCell]       = useState<{rowIdx:number;dateStr:string}|null>(null);
   const [pendingHours, setPending]    = useState('');
   const [saving, setSaving]           = useState(false);
+  const [showChangePwd, setShowChangePwd] = useState(false);
   const cellInputRef                  = useRef<HTMLInputElement>(null);
 
   const days    = useMemo(() => weekDaysOf(weekStart), [weekStart]);
@@ -178,6 +180,7 @@ export default function EmployeePage() {
   const ss      = STATUS_STYLE[status];
 
   return (
+    <>
     <div className="min-h-screen" style={{background:C.base, color:C.t1}}>
 
       {/* ── top bar ── */}
@@ -233,6 +236,11 @@ export default function EmployeePage() {
           </button>
           <div style={{width:'1px', height:'16px', background:C.border}}/>
           <span className="text-xs" style={{color:C.t3}}>{authUser?.email}</span>
+          <button onClick={() => setShowChangePwd(true)}
+            className="px-3 py-1.5 text-xs rounded-lg transition-colors"
+            style={{background:C.elev, color:C.t2, border:`1px solid ${C.border}`}}>
+            Change Password
+          </button>
           <button onClick={async () => { await signOut(); router.replace('/login'); }}
             className="px-3 py-1.5 text-xs rounded-lg transition-colors"
             style={{background:C.elev, color:C.t2, border:`1px solid ${C.border}`}}>
@@ -452,5 +460,8 @@ export default function EmployeePage() {
         </div>
       </div>
     </div>
+
+    {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+    </>
   );
 }
