@@ -3,60 +3,65 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import { UserRole } from '../contexts/AuthContext';
 
 interface AuthContextType {
   user: User | null;
+  role: UserRole;
   loading: boolean;
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true, signOut: async () => {} });
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  role: null,
+  loading: true,
+  signOut: async () => {},
+});
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser]     = useState<User | null>(null);
+  const [role, setRole]     = useState<UserRole>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    console.log('AuthProvider: Setting up Firebase auth listener...');
-    try {
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        console.log('AuthProvider: Auth state changed:', user ? `User: ${user.email} (${user.uid})` : 'No user');
-        if (user) {
-          console.log('AuthProvider: User details:', {
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName,
-            emailVerified: user.emailVerified
-          });
-        }
-        setUser(user);
-        setLoading(false);
-      });
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
 
-      // Add a timeout to force loading to false if Firebase doesn't respond
-      const timeout = setTimeout(() => {
-        if (loading) {
-          console.log('AuthProvider: Firebase auth timeout, forcing loading to false');
-          setLoading(false);
+      if (firebaseUser?.email) {
+        try {
+          const res = await fetch(`/api/employees?email=${encodeURIComponent(firebaseUser.email)}`);
+          if (res.ok) {
+            const emp = await res.json();
+            setRole(emp.role === 'admin' ? 'admin' : 'employee');
+          } else {
+            // Employee record not found — default to 'employee'
+            setRole('employee');
+          }
+        } catch {
+          setRole('employee');
         }
-      }, 5000);
+      } else {
+        setRole(null);
+      }
 
-      return () => {
-        unsubscribe();
-        clearTimeout(timeout);
-      };
-    } catch (error) {
-      console.error('AuthProvider: Firebase auth setup error:', error);
       setLoading(false);
-    }
+    });
+
+    const timeout = setTimeout(() => setLoading(false), 5000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
-  const signOut = () => firebaseSignOut(auth);
+  const signOut = () => firebaseSignOut(auth).then(() => setRole(null));
 
   return (
-    <AuthContext.Provider value={{ user, loading, signOut }}>
+    <AuthContext.Provider value={{ user, role, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

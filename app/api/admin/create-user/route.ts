@@ -42,18 +42,19 @@ export async function POST(request: Request) {
     }
 
     // 2. Create employee record in DB (upsert — safe if email already exists)
+    const safeRole = role === 'admin' ? 'admin' : 'employee';
     const dbRes = await queryDB(
-      `INSERT INTO employees (id, name, email)
-       VALUES (gen_random_uuid(), $1, $2)
-       ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+      `INSERT INTO employees (id, name, email, role)
+       VALUES (gen_random_uuid(), $1, $2, $3)
+       ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, role = EXCLUDED.role
        RETURNING *`,
-      [name, email]
+      [name, email, safeRole]
     );
 
     return NextResponse.json({
       employee: dbRes.rows[0],
       firebaseUid: firebaseData.localId,
-      role: role ?? 'employee',
+      role: safeRole,
     }, { status: 201 });
 
   } catch (error) {

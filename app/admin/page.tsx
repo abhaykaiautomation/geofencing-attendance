@@ -225,32 +225,21 @@ function EditAssignmentForm({ assignment, onUpdate, employees, worksites }: { as
 }
 
 // ── Employee Forms ────────────────────────────────────────────────────────────
-function AddEmployeeForm({ onAdd }: { onAdd: (e: Omit<Employee, 'id'>) => void }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  return (
-    <form style={{ ...cardSx, padding: 16, marginBottom: 16 }}
-      onSubmit={e => { e.preventDefault(); onAdd({ name, email }); setName(''); setEmail(''); }}>
-      <p style={{ fontSize: '0.75rem', fontWeight: 600, color: C.t2, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Add Employee</p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        <input style={{ ...inputSx, flex: 1, minWidth: 160 }} required placeholder="Full name" value={name} onChange={e => setName(e.target.value)} />
-        <input style={{ ...inputSx, flex: 1, minWidth: 200 }} required type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} />
-        <button type="submit" style={btnPrimary(C.teal)}>Add Employee</button>
-      </div>
-    </form>
-  );
-}
-
 function EditEmployeeForm({ employee, onUpdate }: { employee: Employee; onUpdate: (id: number, e: Partial<Employee>) => void }) {
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(employee.name ?? '');
+  const [name, setName]   = useState(employee.name ?? '');
   const [email, setEmail] = useState(employee.email ?? '');
+  const [role, setRole]   = useState<'admin' | 'employee'>(employee.role ?? 'employee');
   if (!editing) return <button style={btnGhost(C.indigo)} onClick={() => setEditing(true)}>Edit</button>;
   return (
     <form style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
-      onSubmit={e => { e.preventDefault(); onUpdate(Number(employee.id), { name, email }); setEditing(false); }}>
+      onSubmit={e => { e.preventDefault(); onUpdate(Number(employee.id), { name, email, role }); setEditing(false); }}>
       <input style={{ ...inputSx, fontSize: '0.7rem', width: 140 }} value={name} onChange={e => setName(e.target.value)} />
       <input style={{ ...inputSx, fontSize: '0.7rem', width: 200 }} type="email" value={email} onChange={e => setEmail(e.target.value)} />
+      <select style={{ ...inputSx, fontSize: '0.7rem' }} value={role} onChange={e => setRole(e.target.value as 'admin' | 'employee')}>
+        <option value="employee">Employee</option>
+        <option value="admin">Admin</option>
+      </select>
       <button type="submit" style={btnGhost(C.teal)}>Save</button>
       <button type="button" style={btnGhost(C.t3)} onClick={() => setEditing(false)}>Cancel</button>
     </form>
@@ -778,9 +767,18 @@ export default function AdminPage() {
                 ? <p style={{ padding: 20, color: C.t3, fontSize: '0.8rem', textAlign: 'center' }}>No employees yet.</p>
                 : employees.map((e, i) => (
                   <div key={e.id} style={{ padding: '12px 16px', borderBottom: i < employees.length - 1 ? `1px solid ${C.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <div>
-                      <p style={{ fontSize: '0.875rem', fontWeight: 500, color: C.t1 }}>{e.name}</p>
-                      <p style={{ fontSize: '0.75rem', color: C.t3, marginTop: 2 }}>{e.email}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div>
+                        <p style={{ fontSize: '0.875rem', fontWeight: 500, color: C.t1 }}>{e.name}</p>
+                        <p style={{ fontSize: '0.75rem', color: C.t3, marginTop: 2 }}>{e.email}</p>
+                      </div>
+                      <span style={{
+                        background: e.role === 'admin' ? C.indigoDim : C.tealDim,
+                        color: e.role === 'admin' ? C.indigo : C.teal,
+                        border: `1px solid ${e.role === 'admin' ? C.indigo : C.teal}33`,
+                        borderRadius: 5, fontSize: '0.7rem', fontWeight: 600,
+                        padding: '2px 8px', textTransform: 'capitalize',
+                      }}>{e.role ?? 'employee'}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <EditEmployeeForm employee={e} onUpdate={updateEmployee} />

@@ -18,10 +18,9 @@ export default function LoginPage() {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const router = useRouter();
-  const { user } = useAuth();
-
-  if (user) {
-    router.replace(user.email?.includes('admin') ? '/admin' : '/employee');
+  const { user, role } = useAuth();
+  if (user && role) {
+    router.replace(role === 'admin' ? '/admin' : '/employee');
     return null;
   }
 
@@ -31,7 +30,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
-      router.replace(cred.user.email?.includes('admin') ? '/admin' : '/employee');
+      // Role is fetched by AuthProvider after auth state changes;
+      // fetch it directly here for immediate redirect
+      const empRes = await fetch(`/api/employees?email=${encodeURIComponent(cred.user.email ?? '')}`);
+      const emp = empRes.ok ? await empRes.json() : null;
+      router.replace(emp?.role === 'admin' ? '/admin' : '/employee');
     } catch (err: any) {
       const codes: Record<string, string> = {
         'auth/user-not-found':    'No account found with this email.',

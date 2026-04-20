@@ -51,13 +51,14 @@ const FEATURES = [
 ];
 
 export default function Home() {
-  const { user, loading } = useAuth();
+  const { user, role, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) router.replace('/login');
-    if (!loading && user) router.replace(user.email?.includes('admin') ? '/admin' : '/employee');
-  }, [user, loading, router]);
+    if (loading) return;
+    if (!user) router.replace('/login');
+    else if (role) router.replace(role === 'admin' ? '/admin' : '/employee');
+  }, [user, role, loading, router]);
 
   // Show nothing while auth state resolves
   return (
