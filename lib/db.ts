@@ -20,8 +20,10 @@ function parseDatabaseUrl(url: string) {
   };
 }
 
+const isNeon = process.env.DATABASE_URL?.includes('neon.tech');
+
 const dbConfig = process.env.DATABASE_URL
-  ? parseDatabaseUrl(process.env.DATABASE_URL)
+  ? { connectionString: process.env.DATABASE_URL, ssl: isNeon ? { rejectUnauthorized: false } : false }
   : {
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
