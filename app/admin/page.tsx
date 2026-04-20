@@ -483,6 +483,21 @@ function ProjectsTab({ employees }: { employees: Employee[] }) {
   );
 }
 
+// ── Radius input with "m" badge ───────────────────────────────────────────────
+function RadiusInput({ label, value, onChange, required }: { label: string; value: string; onChange: (v: string) => void; required?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', background: C.input, border: `1px solid ${C.borderMd}`, borderRadius: 8, overflow: 'hidden' }}>
+      <input
+        required={required}
+        type="number" min="1" step="1" placeholder={label}
+        value={value} onChange={e => onChange(e.target.value)}
+        style={{ ...inputSx, border: 'none', borderRadius: 0, width: 120, background: 'transparent' }}
+      />
+      <span style={{ padding: '0 10px', fontSize: '0.75rem', fontWeight: 600, color: C.teal, borderLeft: `1px solid ${C.borderMd}`, whiteSpace: 'nowrap' }}>m</span>
+    </div>
+  );
+}
+
 // ── Worksite Forms ────────────────────────────────────────────────────────────
 function AddWorksiteForm({ onAdd }: { onAdd: (w: Omit<Worksite, 'id'>) => void }) {
   const [name, setName] = useState('');
@@ -504,8 +519,8 @@ function AddWorksiteForm({ onAdd }: { onAdd: (w: Omit<Worksite, 'id'>) => void }
         <input style={{ ...inputSx, flex: 1, minWidth: 200 }} required placeholder="Address" value={address} onChange={e => setAddress(e.target.value)} />
         <input style={{ ...inputSx, width: 120 }} required placeholder="Latitude" type="number" step="any" value={latitude} onChange={e => setLatitude(e.target.value)} />
         <input style={{ ...inputSx, width: 120 }} required placeholder="Longitude" type="number" step="any" value={longitude} onChange={e => setLongitude(e.target.value)} />
-        <input style={{ ...inputSx, width: 130 }} required placeholder="Entry radius (m)" type="number" step="any" value={entryRadius} onChange={e => setEntryRadius(e.target.value)} />
-        <input style={{ ...inputSx, width: 130 }} required placeholder="Exit radius (m)" type="number" step="any" value={exitRadius} onChange={e => setExitRadius(e.target.value)} />
+        <RadiusInput label="Entry radius" value={entryRadius} onChange={setEntryRadius} required />
+        <RadiusInput label="Exit radius"  value={exitRadius}  onChange={setExitRadius}  required />
         <button type="submit" style={btnPrimary(C.teal)}>Add</button>
       </div>
     </form>
@@ -532,8 +547,8 @@ function EditWorksiteForm({ worksite, onUpdate }: { worksite: Worksite; onUpdate
       <input style={{ ...inputSx, fontSize: '0.7rem', width: 160 }} value={address} onChange={e => setAddress(e.target.value)} />
       <input style={{ ...inputSx, fontSize: '0.7rem', width: 90 }} type="number" step="any" value={latitude} onChange={e => setLatitude(e.target.value)} />
       <input style={{ ...inputSx, fontSize: '0.7rem', width: 90 }} type="number" step="any" value={longitude} onChange={e => setLongitude(e.target.value)} />
-      <input style={{ ...inputSx, fontSize: '0.7rem', width: 90 }} type="number" step="any" value={entryRadius} onChange={e => setEntryRadius(e.target.value)} />
-      <input style={{ ...inputSx, fontSize: '0.7rem', width: 90 }} type="number" step="any" value={exitRadius} onChange={e => setExitRadius(e.target.value)} />
+      <RadiusInput label="Entry" value={entryRadius} onChange={setEntryRadius} />
+      <RadiusInput label="Exit"  value={exitRadius}  onChange={setExitRadius} />
       <button type="submit" style={btnGhost(C.teal)}>Save</button>
       <button type="button" style={btnGhost(C.t3)} onClick={() => setEditing(false)}>Cancel</button>
     </form>
@@ -666,7 +681,7 @@ export default function AdminPage() {
                   <div key={w.id} style={{ padding: '12px 16px', borderBottom: i < worksites.length - 1 ? `1px solid ${C.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div>
                       <p style={{ fontSize: '0.875rem', fontWeight: 500, color: C.t1 }}>{w.name}</p>
-                      <p style={{ fontSize: '0.75rem', color: C.t3, marginTop: 2 }}>{w.address} · {w.latitude}, {w.longitude} · entry {w.entryRadius}m / exit {w.exitRadius}m</p>
+                      <p style={{ fontSize: '0.75rem', color: C.t3, marginTop: 2 }}>{w.address} · {w.latitude}, {w.longitude} · entry <span style={{ color: C.teal }}>{w.entryRadius} m</span> / exit <span style={{ color: C.teal }}>{w.exitRadius} m</span></p>
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <EditWorksiteForm worksite={w} onUpdate={updateWorksite} />

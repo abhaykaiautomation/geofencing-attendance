@@ -13,8 +13,8 @@ CREATE TABLE worksites (
   address TEXT NOT NULL,
   latitude DECIMAL(10, 8) NOT NULL,
   longitude DECIMAL(11, 8) NOT NULL,
-  entry_radius DECIMAL(5, 2) NOT NULL DEFAULT 1.0,
-  exit_radius DECIMAL(5, 2) NOT NULL DEFAULT 2.0,
+  entry_radius DECIMAL(8, 2) NOT NULL DEFAULT 100.0,
+  exit_radius  DECIMAL(8, 2) NOT NULL DEFAULT 150.0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
