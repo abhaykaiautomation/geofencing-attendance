@@ -139,41 +139,115 @@ function EditAttendanceSessionForm({ session, onUpdate, employees, worksites }: 
   );
 }
 
-function AttendanceMonitoringTab({ employees, worksites, sessions, addAttendanceSession, updateAttendanceSession, deleteSession }: {
+function AttendanceMonitoringTab({ employees, worksites, sessions, addAttendanceSession, deleteSession }: {
   employees: Employee[];
   worksites: Worksite[];
   sessions: AttendanceSession[];
   addAttendanceSession: (s: AttendanceSessionInput) => void;
-  updateAttendanceSession: (id: string, s: Partial<AttendanceSessionInput> & { checkOutTime?: string }) => void;
   deleteSession: (id: number) => void;
 }) {
+  const [filterEmp,  setFilterEmp]  = useState('');
+  const [filterDate, setFilterDate] = useState('');
+
+  const fmt = (dt: Date | string | undefined) => {
+    if (!dt) return '—';
+    const d = new Date(dt);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+  const fmtDate = (dt: Date | string | undefined) => {
+    if (!dt) return '—';
+    return new Date(dt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+  const durLabel = (mins: number | undefined | null) => {
+    if (!mins) return '—';
+    const h = Math.floor(mins / 60); const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  const filtered = sessions.filter(s => {
+    const matchEmp  = !filterEmp  || s.employeeId === filterEmp;
+    const matchDate = !filterDate || (s.checkInTime && new Date(s.checkInTime).toISOString().startsWith(filterDate));
+    return matchEmp && matchDate;
+  });
+
+  // Group by date desc
+  const byDate = new Map<string, AttendanceSession[]>();
+  for (const s of [...filtered].sort((a, b) => new Date(b.checkInTime).getTime() - new Date(a.checkInTime).getTime())) {
+    const dateKey = s.checkInTime ? new Date(s.checkInTime).toISOString().split('T')[0] : 'unknown';
+    if (!byDate.has(dateKey)) byDate.set(dateKey, []);
+    byDate.get(dateKey)!.push(s);
+  }
+
   return (
     <div>
       <p style={{ fontSize: '1rem', fontWeight: 700, color: C.t1, marginBottom: 16 }}>Attendance Monitoring</p>
-      <AddAttendanceSessionForm onAdd={addAttendanceSession} employees={employees} worksites={worksites} />
-      <div style={cardSx}>
-        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}` }}>
-          <p style={{ fontSize: '0.75rem', fontWeight: 600, color: C.t2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            All Sessions ({sessions.length})
-          </p>
-        </div>
-        {sessions.length === 0
-          ? <p style={{ padding: 20, fontSize: '0.8rem', color: C.t3, textAlign: 'center' }}>No sessions recorded.</p>
-          : sessions.map((s, i) => (
-            <div key={s.id} style={{ padding: '12px 16px', borderBottom: i < sessions.length - 1 ? `1px solid ${C.border}` : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: '0.8rem', color: C.t2, minWidth: 0 }}>
-                <span style={{ color: C.t1, fontWeight: 500 }}>{employees.find(e => e.id === s.employeeId)?.name || s.employeeId}</span>
-                {' · '}{worksites.find(w => w.id === s.worksiteId)?.name || s.worksiteId}
-                {' · '}In: {s.checkInTime ? new Date(s.checkInTime).toLocaleString() : '—'}
-                {' · '}Out: {s.checkOutTime ? new Date(s.checkOutTime).toLocaleString() : <span style={{ color: C.amber }}>Active</span>}
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <select value={filterEmp} onChange={e => setFilterEmp(e.target.value)} style={{ ...inputSx, minWidth: 180 }}>
+          <option value=''>All Employees</option>
+          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+        <input type='date' value={filterDate} onChange={e => setFilterDate(e.target.value)}
+          style={{ ...inputSx, minWidth: 150 }} />
+        {(filterEmp || filterDate) && (
+          <button onClick={() => { setFilterEmp(''); setFilterDate(''); }} style={btnGhost(C.t3)}>Clear</button>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: C.t3, alignSelf: 'center' }}>
+          {filtered.length} session{filtered.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {/* Table */}
+      <div style={{ ...cardSx, overflow: 'hidden' }}>
+        {byDate.size === 0 ? (
+          <p style={{ padding: 20, fontSize: '0.8rem', color: C.t3, textAlign: 'center' }}>No sessions found.</p>
+        ) : (
+          Array.from(byDate.entries()).map(([dateKey, daySessions]) => (
+            <div key={dateKey}>
+              {/* Date header */}
+              <div style={{ padding: '8px 16px', background: C.elev, borderBottom: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: C.t2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {fmtDate(dateKey)} · {daySessions.length} session{daySessions.length !== 1 ? 's' : ''}
+                </span>
               </div>
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center', shrink: 0 } as React.CSSProperties}>
-                <EditAttendanceSessionForm session={s} onUpdate={updateAttendanceSession} employees={employees} worksites={worksites} />
-                <button style={btnGhost(C.red)} onClick={() => deleteSession(Number(s.id))}>Delete</button>
-              </div>
+              {/* Session rows */}
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                    {['Employee', 'Worksite', 'Check-in', 'Check-out', 'Duration', ''].map(h => (
+                      <th key={h} style={{ padding: '7px 14px', fontSize: '0.68rem', fontWeight: 600, color: C.t3, textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {daySessions.map((s, i) => {
+                    const emp = employees.find(e => e.id === s.employeeId);
+                    const ws  = worksites.find(w => String(w.id) === String(s.worksiteId));
+                    const isActive = !s.checkOutTime;
+                    return (
+                      <tr key={s.id} style={{ borderBottom: i < daySessions.length - 1 ? `1px solid ${C.border}` : 'none', background: isActive ? 'rgba(13,148,136,0.04)' : 'transparent' }}>
+                        <td style={{ padding: '10px 14px', fontSize: '0.8rem', color: C.t1, fontWeight: 500 }}>{emp?.name ?? s.employeeId}</td>
+                        <td style={{ padding: '10px 14px', fontSize: '0.8rem', color: C.t2 }}>{ws?.name ?? s.worksiteId}</td>
+                        <td style={{ padding: '10px 14px', fontSize: '0.8rem', color: C.teal, fontFamily: 'monospace' }}>{fmt(s.checkInTime)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                          {isActive
+                            ? <span style={{ color: C.amber, fontSize: '0.72rem', fontWeight: 600, background: C.amberDim, padding: '2px 7px', borderRadius: 4 }}>ACTIVE</span>
+                            : <span style={{ color: C.t2 }}>{fmt(s.checkOutTime)}</span>
+                          }
+                        </td>
+                        <td style={{ padding: '10px 14px', fontSize: '0.8rem', color: C.t3 }}>{durLabel(s.durationMinutes)}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <button style={btnGhost(C.red)} onClick={() => deleteSession(Number(s.id))}>Delete</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           ))
-        }
+        )}
       </div>
     </div>
   );
@@ -225,7 +299,7 @@ function EditAssignmentForm({ assignment, onUpdate, employees, worksites }: { as
 }
 
 // ── Employee Forms ────────────────────────────────────────────────────────────
-function EditEmployeeForm({ employee, onUpdate }: { employee: Employee; onUpdate: (id: number, e: Partial<Employee>) => void }) {
+function EditEmployeeForm({ employee, onUpdate }: { employee: Employee; onUpdate: (id: string, e: Partial<Employee>) => void }) {
   const [editing, setEditing] = useState(false);
   const [name, setName]   = useState(employee.name ?? '');
   const [email, setEmail] = useState(employee.email ?? '');
@@ -233,7 +307,7 @@ function EditEmployeeForm({ employee, onUpdate }: { employee: Employee; onUpdate
   if (!editing) return <button style={btnGhost(C.indigo)} onClick={() => setEditing(true)}>Edit</button>;
   return (
     <form style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}
-      onSubmit={e => { e.preventDefault(); onUpdate(Number(employee.id), { name, email, role }); setEditing(false); }}>
+      onSubmit={e => { e.preventDefault(); onUpdate(employee.id, { name, email, role }); setEditing(false); }}>
       <input style={{ ...inputSx, fontSize: '0.7rem', width: 140 }} value={name} onChange={e => setName(e.target.value)} />
       <input style={{ ...inputSx, fontSize: '0.7rem', width: 200 }} type="email" value={email} onChange={e => setEmail(e.target.value)} />
       <select style={{ ...inputSx, fontSize: '0.7rem' }} value={role} onChange={e => setRole(e.target.value as 'admin' | 'employee')}>
@@ -612,12 +686,14 @@ const TABS = [
 ];
 
 export default function AdminPage() {
-  const { user, loading, signOut } = useAuth();
+  const { user, role, loading, signOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) router.replace('/login');
-  }, [user, loading, router]);
+    if (loading) return;
+    if (!user) router.replace('/login');
+    else if (role && role !== 'admin') router.replace('/employee');
+  }, [user, role, loading, router]);
   const [activeTab, setActiveTab] = useState('worksites');
   const [worksites, setWorksites]   = useState<Worksite[]>([]);
   const [employees, setEmployees]   = useState<Employee[]>([]);
@@ -625,6 +701,8 @@ export default function AdminPage() {
   const [sessions, setSessions]     = useState<AttendanceSession[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const [showEmpPicker, setShowEmpPicker] = useState(false);
+  const [empSearch, setEmpSearch]         = useState('');
 
   useEffect(() => { fetchData(); }, []);
 
@@ -660,8 +738,8 @@ export default function AdminPage() {
   const deleteWorksite = (id: number) => crud(`/api/worksites/${id}`, 'DELETE');
 
   const addEmployee    = (e: Omit<Employee, 'id'>)    => crud('/api/employees', 'POST', e);
-  const updateEmployee = (id: number, e: Partial<Employee>) => crud(`/api/employees/${id}`, 'PATCH', e);
-  const deleteEmployee = (id: number) => crud(`/api/employees/${id}`, 'DELETE');
+  const updateEmployee = (id: string, e: Partial<Employee>) => crud(`/api/employees/${id}`, 'PATCH', e);
+  const deleteEmployee = (id: string) => crud(`/api/employees/${id}`, 'DELETE');
 
   const addAssignment    = (a: Omit<Assignment, 'id'>)   => crud('/api/assignments', 'POST', a);
   const updateAssignment = (id: number, a: Partial<Assignment>) => crud('/api/assignments', 'PATCH', { id, ...a });
@@ -697,7 +775,42 @@ export default function AdminPage() {
         <span style={{ fontSize: '0.875rem', fontWeight: 600, color: C.t1 }}>Admin Dashboard</span>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: '0.75rem', color: C.t3, marginRight: 4 }}>{user?.email}</span>
-        <a href="/employee" style={{ fontSize: '0.75rem', color: C.t2, textDecoration: 'none', padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev }}>Employee View</a>
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => { setShowEmpPicker(v => !v); setEmpSearch(''); }}
+            style={{ fontSize: '0.75rem', color: C.t2, padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev, cursor: 'pointer' }}>
+            Employee View
+          </button>
+          {showEmpPicker && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 260, background: C.surface, border: `1px solid ${C.borderMd}`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 50 }}>
+              <div style={{ padding: '10px 10px 6px' }}>
+                <input
+                  autoFocus
+                  placeholder="Search employee…"
+                  value={empSearch}
+                  onChange={e => setEmpSearch(e.target.value)}
+                  style={{ width: '100%', background: C.input, border: `1px solid ${C.borderMd}`, color: C.t1, borderRadius: 7, fontSize: '0.8rem', padding: '7px 10px', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ maxHeight: 220, overflowY: 'auto', padding: '4px 6px 8px' }}>
+                {employees
+                  .filter(e => e.name.toLowerCase().includes(empSearch.toLowerCase()) || e.email.toLowerCase().includes(empSearch.toLowerCase()))
+                  .map(e => (
+                    <button key={e.id} onClick={() => { setShowEmpPicker(false); router.push(`/employee?employeeId=${e.id}`); }}
+                      style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderRadius: 7, padding: '8px 10px', cursor: 'pointer', color: C.t1 }}
+                      onMouseEnter={ev => (ev.currentTarget.style.background = C.elev)}
+                      onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}>
+                      <p style={{ fontSize: '0.8rem', fontWeight: 600, margin: 0 }}>{e.name}</p>
+                      <p style={{ fontSize: '0.72rem', color: C.t3, margin: 0 }}>{e.email}</p>
+                    </button>
+                  ))
+                }
+                {employees.filter(e => e.name.toLowerCase().includes(empSearch.toLowerCase()) || e.email.toLowerCase().includes(empSearch.toLowerCase())).length === 0 && (
+                  <p style={{ fontSize: '0.75rem', color: C.t3, textAlign: 'center', padding: '12px 0', margin: 0 }}>No employees found</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         <button onClick={() => setShowChangePwd(true)}
           style={{ fontSize: '0.75rem', color: C.t2, padding: '5px 12px', borderRadius: 7, border: `1px solid ${C.borderMd}`, background: C.elev, cursor: 'pointer' }}>
           Change Password
@@ -782,7 +895,7 @@ export default function AdminPage() {
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <EditEmployeeForm employee={e} onUpdate={updateEmployee} />
-                      <button onClick={() => deleteEmployee(Number(e.id))} style={btnGhost(C.red)}>Delete</button>
+                      <button onClick={() => deleteEmployee(e.id)} style={btnGhost(C.red)}>Delete</button>
                     </div>
                   </div>
                 ))
@@ -823,7 +936,6 @@ export default function AdminPage() {
           <AttendanceMonitoringTab
             employees={employees} worksites={worksites} sessions={sessions}
             addAttendanceSession={addAttendanceSession}
-            updateAttendanceSession={updateAttendanceSession}
             deleteSession={deleteSession}
           />
         )}

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { EmployeeProject, TimeEntry } from '../../types';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import ChangePasswordModal from '../../components/ChangePasswordModal';
 
@@ -53,16 +53,243 @@ const STATUS_STYLE: Record<Status,{bg:string,color:string}> = {
   Declined:  { bg:'rgba(220,38,38,0.15)',   color:'#f87171' },
 };
 
+// ── Haversine distance (metres) ────────────────────────────────────────────────
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+interface WS { id: string | number; name: string; latitude: number; longitude: number; entry_radius?: number; exit_radius?: number; entryRadius?: number; exitRadius?: number; }
+interface ActiveSession { id: string; worksiteId: string | number; checkInTime: string; }
+
+function GeofenceModal({ employeeId, onClose, initialLat, initialLng, autoCheck }:
+  { employeeId: string; onClose: () => void; initialLat?: string; initialLng?: string; autoCheck?: boolean }) {
+  const [lat, setLat]           = useState(initialLat ?? '');
+  const [lng, setLng]           = useState(initialLng ?? '');
+  const [gpsLoading, setGps]    = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [matches, setMatches]   = useState<{ ws: WS; distance: number; activeSession: ActiveSession | null; action: 'checkin' | 'checkout' | 'inside' }[]>([]);
+  const [checked, setChecked]   = useState(false);
+  const [toast, setToast]       = useState<{ msg: string; ok: boolean } | null>(null);
+
+  const checkLocationWithCoords = useCallback(async (latN: number, lngN: number) => {
+    setChecking(true); setMatches([]); setChecked(false); setToast(null);
+    try {
+      const [wsRes, sesRes] = await Promise.all([
+        fetch('/api/worksites'),
+        fetch(`/api/attendance?employeeId=${employeeId}`),
+      ]);
+      const worksites: WS[]           = wsRes.ok  ? await wsRes.json()  : [];
+      const sessions: ActiveSession[] = sesRes.ok ? await sesRes.json() : [];
+      const openSessions = sessions.filter((s: any) => !s.checkOutTime);
+
+      const found = worksites
+        .map(ws => {
+          const dist     = haversineM(latN, lngN, Number(ws.latitude), Number(ws.longitude));
+          const entryR   = Number(ws.entry_radius  ?? ws.entryRadius ?? 100);
+          const exitR    = Number(ws.exit_radius   ?? ws.exitRadius  ?? 150);
+          const active   = openSessions.find((s: any) => String(s.worksiteId) === String(ws.id)) ?? null;
+
+          if (active && dist > exitR) {
+            // Checked in but now outside exit radius → offer check-out
+            return { ws, distance: Math.round(dist), activeSession: active, action: 'checkout' as const };
+          }
+          if (!active && dist <= entryR) {
+            // Not checked in and within entry radius → offer check-in
+            return { ws, distance: Math.round(dist), activeSession: null, action: 'checkin' as const };
+          }
+          if (active && dist <= exitR) {
+            // Still inside exit radius — show info only, no action yet
+            return { ws, distance: Math.round(dist), activeSession: active, action: 'inside' as const };
+          }
+          return null;
+        })
+        .filter(Boolean) as { ws: WS; distance: number; activeSession: ActiveSession | null; action: 'checkin' | 'checkout' | 'inside' }[];
+
+      setMatches(found);
+      setChecked(true);
+      if (found.length === 0) setToast({ msg: 'No actionable worksites at this location', ok: false });
+    } catch { setToast({ msg: 'Failed to check location', ok: false }); }
+    finally { setChecking(false); }
+  }, [employeeId]);
+
+  // Auto-run on mount if initial coords provided
+  useEffect(() => {
+    if (autoCheck && initialLat && initialLng) {
+      const latN = parseFloat(initialLat); const lngN = parseFloat(initialLng);
+      if (!isNaN(latN) && !isNaN(lngN)) checkLocationWithCoords(latN, lngN);
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const useGPS = () => {
+    if (!navigator.geolocation) { setToast({ msg: 'Geolocation not supported', ok: false }); return; }
+    setGps(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => { setLat(pos.coords.latitude.toFixed(7)); setLng(pos.coords.longitude.toFixed(7)); setGps(false); setChecked(false); setMatches([]); },
+      () => { setToast({ msg: 'Could not get location', ok: false }); setGps(false); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const checkLocation = async () => {
+    const latN = parseFloat(lat); const lngN = parseFloat(lng);
+    if (isNaN(latN) || isNaN(lngN)) { setToast({ msg: 'Enter valid coordinates', ok: false }); return; }
+    await checkLocationWithCoords(latN, lngN);
+  };
+
+  const doCheckIn = async (ws: WS) => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/attendance', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId, worksiteId: ws.id, checkInTime: new Date().toISOString(), location: { lat: parseFloat(lat), lng: parseFloat(lng) } }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      const session = await res.json();
+      setToast({ msg: `Checked in at ${ws.name}`, ok: true });
+      setMatches(prev => prev.map(m => m.ws.id === ws.id
+        ? { ...m, activeSession: { id: String(session.id), worksiteId: ws.id, checkInTime: session.checkInTime } }
+        : m));
+      setTimeout(() => onClose(), 1500);
+    } catch (e: any) { setToast({ msg: e.message ?? 'Check-in failed', ok: false }); }
+    finally { setSaving(false); }
+  };
+
+  const doCheckOut = async (ws: WS, session: ActiveSession) => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/attendance', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: session.id, checkOutTime: new Date().toISOString(), location: { lat: parseFloat(lat), lng: parseFloat(lng) } }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setToast({ msg: `Checked out from ${ws.name}`, ok: true });
+      setMatches(prev => prev.map(m => m.ws.id === ws.id ? { ...m, activeSession: null } : m));
+      setTimeout(() => onClose(), 1500);
+    } catch (e: any) { setToast({ msg: e.message ?? 'Check-out failed', ok: false }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.borderMd}`, borderRadius: 14, width: '100%', maxWidth: 420, padding: 24 }}>
+
+        {/* header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <p style={{ fontWeight: 700, fontSize: '0.95rem', color: C.t1, margin: 0 }}>Attendance Check-In / Out</p>
+            <p style={{ fontSize: '0.75rem', color: C.t3, margin: '3px 0 0' }}>Enter or detect your location to verify geofence</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.t3, cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* lat / lng inputs */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: '0.7rem', color: C.t3, fontWeight: 600, display: 'block', marginBottom: 4 }}>Latitude</label>
+            <input value={lat} onChange={e => { setLat(e.target.value); setChecked(false); setMatches([]); }} placeholder="e.g. 28.6139"
+              style={{ width: '100%', background: C.input, border: `1px solid ${C.borderMd}`, color: C.t1, borderRadius: 8, fontSize: '0.8rem', padding: '8px 10px', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          <div>
+            <label style={{ fontSize: '0.7rem', color: C.t3, fontWeight: 600, display: 'block', marginBottom: 4 }}>Longitude</label>
+            <input value={lng} onChange={e => { setLng(e.target.value); setChecked(false); setMatches([]); }} placeholder="e.g. 77.2090"
+              style={{ width: '100%', background: C.input, border: `1px solid ${C.borderMd}`, color: C.t1, borderRadius: 8, fontSize: '0.8rem', padding: '8px 10px', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+
+        {/* action row */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <button onClick={useGPS} disabled={gpsLoading}
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: C.elev, border: `1px solid ${C.borderMd}`, color: C.t2, borderRadius: 8, fontSize: '0.75rem', padding: '8px', cursor: 'pointer' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+            {gpsLoading ? 'Detecting…' : 'Use My Location'}
+          </button>
+          <button onClick={checkLocation} disabled={checking || !lat || !lng}
+            style={{ flex: 1, background: C.teal, border: 'none', color: '#fff', borderRadius: 8, fontSize: '0.75rem', fontWeight: 600, padding: '8px', cursor: 'pointer', opacity: (!lat || !lng) ? 0.5 : 1 }}>
+            {checking ? 'Checking…' : 'Check Location'}
+          </button>
+        </div>
+
+        {/* toast */}
+        {toast && (
+          <div style={{
+            background: toast.ok ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',
+            border: `1px solid ${toast.ok ? 'rgba(22,163,74,0.3)' : 'rgba(220,38,38,0.25)'}`,
+            borderRadius: 8, padding: '8px 12px', marginBottom: 12
+          }}>
+            <p style={{ fontSize: '0.75rem', color: toast.ok ? '#4ade80' : '#f87171', margin: 0 }}>{toast.msg}</p>
+          </div>
+        )}
+
+        {/* results */}
+        {checked && matches.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {matches.map(({ ws, distance, activeSession, action }) => {
+              const entryR = Number(ws.entry_radius ?? ws.entryRadius ?? 100);
+              const exitR  = Number(ws.exit_radius  ?? ws.exitRadius  ?? 150);
+              const borderColor = action === 'checkout' ? 'rgba(217,119,6,0.45)' : action === 'checkin' ? 'rgba(99,102,241,0.35)' : 'rgba(13,148,136,0.4)';
+              const badgeBg    = action === 'inside'   ? 'rgba(13,148,136,0.15)' : action === 'checkout' ? 'rgba(217,119,6,0.15)' : 'rgba(99,102,241,0.12)';
+              const badgeColor = action === 'inside'   ? C.teal : action === 'checkout' ? C.amber : C.indigo;
+              const badgeLabel = action === 'inside'   ? 'CHECKED IN' : action === 'checkout' ? 'LEFT ZONE' : 'NOT CHECKED IN';
+              return (
+              <div key={String(ws.id)} style={{ background: C.elev, border: `1px solid ${borderColor}`, borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div>
+                    <p style={{ fontWeight: 600, fontSize: '0.85rem', color: C.t1, margin: 0 }}>{ws.name}</p>
+                    <p style={{ fontSize: '0.72rem', color: C.t3, margin: '2px 0 0' }}>
+                      {distance}m away · entry {entryR}m · exit {exitR}m
+                    </p>
+                  </div>
+                  <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '3px 8px', borderRadius: 5, background: badgeBg, color: badgeColor }}>
+                    {badgeLabel}
+                  </span>
+                </div>
+                {action === 'checkin' && (
+                  <button onClick={() => doCheckIn(ws)} disabled={saving}
+                    style={{ width: '100%', background: C.indigo, border: 'none', color: '#fff', borderRadius: 7, fontSize: '0.78rem', fontWeight: 600, padding: '8px', cursor: 'pointer' }}>
+                    {saving ? 'Saving…' : `Check In at ${ws.name}`}
+                  </button>
+                )}
+                {action === 'checkout' && activeSession && (
+                  <button onClick={() => doCheckOut(ws, activeSession)} disabled={saving}
+                    style={{ width: '100%', background: C.amber, border: 'none', color: '#fff', borderRadius: 7, fontSize: '0.78rem', fontWeight: 600, padding: '8px', cursor: 'pointer' }}>
+                    {saving ? 'Saving…' : `Check Out from ${ws.name}`}
+                  </button>
+                )}
+                {action === 'inside' && (
+                  <p style={{ fontSize: '0.75rem', color: C.teal, margin: 0, textAlign: 'center', padding: '4px 0' }}>
+                    Still within exit radius ({exitR}m) — move away to check out
+                  </p>
+                )}
+              </div>
+              );
+            })}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 // ── component ──────────────────────────────────────────────────────────────────
-export default function EmployeePage() {
+function EmployeePageInner() {
   const { user: authUser, loading: authLoading, signOut } = useAuth();
-  const router = useRouter();
+  const router       = useRouter();
+  const searchParams = useSearchParams();
+  const viewEmployeeId = searchParams.get('employeeId'); // set when admin navigates here
+  const isAdminView    = !!viewEmployeeId;
 
   useEffect(() => {
     if (!authLoading && !authUser) router.replace('/login');
   }, [authUser, authLoading, router]);
 
-  const user = { email: authUser?.email ?? '', name: authUser?.displayName ?? authUser?.email ?? 'Employee', id: 'ded00872-16ce-43a1-a6d2-35476da36876' };
+  const [employeeRecord, setEmployeeRecord] = useState<{ id: string; name: string; email: string } | null>(null);
 
   const [weekStart, setWeekStart]     = useState<Date>(() => getMonday(new Date()));
   const [myProjects, setMyProjects]   = useState<EmployeeProject[]>([]);
@@ -75,8 +302,12 @@ export default function EmployeePage() {
   const [editCell, setEditCell]       = useState<{rowIdx:number;dateStr:string}|null>(null);
   const [pendingHours, setPending]    = useState('');
   const [saving, setSaving]           = useState(false);
-  const [showChangePwd, setShowChangePwd] = useState(false);
-  const cellInputRef                  = useRef<HTMLInputElement>(null);
+  const [showChangePwd, setShowChangePwd]   = useState(false);
+  const [showGeofence, setShowGeofence]     = useState(false);
+  const [autoLat, setAutoLat]               = useState('');
+  const [autoLng, setAutoLng]               = useState('');
+  const [autoNotif, setAutoNotif]           = useState<{ msg: string; ok: boolean } | null>(null);
+  const cellInputRef                        = useRef<HTMLInputElement>(null);
 
   const days    = useMemo(() => weekDaysOf(weekStart), [weekStart]);
   const weekEnd = useMemo(() => { const d = new Date(days[6]); d.setHours(23,59,59,999); return d; }, [days]);
@@ -84,27 +315,129 @@ export default function EmployeePage() {
   useEffect(() => {
     (async () => {
       try {
-        const empRes   = await fetch('/api/employees', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ email: user.email, name: user.name }),
-        });
-        const employee = await empRes.json();
-        const projRes  = await fetch(`/api/projects/members?employeeId=${employee.id}`);
+        let employee: { id: string; name: string; email: string };
+        if (viewEmployeeId) {
+          // Admin viewing a specific employee
+          const res = await fetch(`/api/employees/${viewEmployeeId}`);
+          if (!res.ok) { router.replace('/admin'); return; }
+          employee = await res.json();
+        } else {
+          // Normal employee self-view — upsert by email
+          const email = authUser?.email ?? '';
+          const name  = authUser?.displayName ?? email;
+          const res   = await fetch('/api/employees', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, name }),
+          });
+          employee = await res.json();
+        }
+        setEmployeeRecord(employee);
+        const projRes = await fetch(`/api/projects/members?employeeId=${employee.id}`);
         if (projRes.ok) setMyProjects(await projRes.json());
       } catch(e) { console.error(e); }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [viewEmployeeId, authUser]);
 
   const fetchEntries = useCallback(async () => {
+    if (!employeeRecord) return;
     const res = await fetch(
-      `/api/time-entries?employeeId=${user.id}&startDate=${toDateStr(weekStart)}&endDate=${toDateStr(days[6])}`
+      `/api/time-entries?employeeId=${employeeRecord.id}&startDate=${toDateStr(weekStart)}&endDate=${toDateStr(days[6])}`
     );
     if (res.ok) setTimeEntries(await res.json());
-  }, [weekStart, days]);
+  }, [employeeRecord, weekStart, days]);
 
   useEffect(() => { fetchEntries(); }, [fetchEntries]);
   useEffect(() => { if (editCell) cellInputRef.current?.focus(); }, [editCell]);
+
+  // Auto-open attendance popup on load if within entry radius OR outside exit radius with active session
+  useEffect(() => {
+    if (isAdminView || !employeeRecord || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const latN = pos.coords.latitude;
+      const lngN = pos.coords.longitude;
+      try {
+        const [wsRes, sesRes] = await Promise.all([
+          fetch('/api/worksites'),
+          fetch(`/api/attendance?employeeId=${employeeRecord.id}`),
+        ]);
+        if (!wsRes.ok) return;
+        const worksites: WS[] = await wsRes.json();
+        const sessions: any[] = sesRes.ok ? await sesRes.json() : [];
+        const openSessions = sessions.filter((s: any) => !s.checkOutTime);
+
+        const shouldOpen = worksites.some(ws => {
+          const dist   = haversineM(latN, lngN, Number(ws.latitude), Number(ws.longitude));
+          const entryR = Number(ws.entry_radius ?? ws.entryRadius ?? 100);
+          const exitR  = Number(ws.exit_radius  ?? ws.exitRadius  ?? 150);
+          const active = openSessions.find((s: any) => String(s.worksiteId) === String(ws.id));
+          // Open if: within entry radius (can check in) OR has active session and outside exit radius (should check out)
+          return dist <= entryR || (active && dist > exitR);
+        });
+
+        if (shouldOpen) {
+          setAutoLat(latN.toFixed(7));
+          setAutoLng(lngN.toFixed(7));
+          setShowGeofence(true);
+        }
+      } catch { /* silent */ }
+    }, () => { /* permission denied — silent */ }, { enableHighAccuracy: true, timeout: 10000 });
+  }, [employeeRecord, isAdminView]);
+
+  useEffect(() => {
+    if (isAdminView || !employeeRecord || !navigator.geolocation) return;
+    // Track which sessions we've already auto-acted on to prevent rapid re-fires
+    const actedIn  = new Set<string>(); // worksiteId strings we recently checked into
+    const actedOut = new Set<string>(); // sessionIds we recently checked out
+
+    const handlePosition = async (pos: GeolocationPosition) => {
+      const latN = pos.coords.latitude;
+      const lngN = pos.coords.longitude;
+      try {
+        const [wsRes, sesRes] = await Promise.all([
+          fetch('/api/worksites'),
+          fetch(`/api/attendance?employeeId=${employeeRecord.id}`),
+        ]);
+        if (!wsRes.ok || !sesRes.ok) return;
+        const worksites: WS[] = await wsRes.json();
+        const allSessions: any[] = await sesRes.json();
+        const openSessions = allSessions.filter((s: any) => !s.checkOutTime);
+
+        for (const ws of worksites) {
+          const dist   = haversineM(latN, lngN, Number(ws.latitude), Number(ws.longitude));
+          const entryR = Number(ws.entry_radius ?? ws.entryRadius ?? 100);
+          const exitR  = Number(ws.exit_radius  ?? ws.exitRadius  ?? 150);
+          const wsId   = String(ws.id);
+          const active = openSessions.find((s: any) => String(s.worksiteId) === wsId);
+
+          if (!active && dist <= entryR && !actedIn.has(wsId)) {
+            actedIn.add(wsId);
+            const res = await fetch('/api/attendance', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ employeeId: employeeRecord.id, worksiteId: ws.id, checkInTime: new Date().toISOString(), location: { lat: latN, lng: lngN } }),
+            });
+            if (res.ok) setAutoNotif({ msg: `Auto checked in at ${ws.name}`, ok: true });
+            setTimeout(() => actedIn.delete(wsId), 300000); // 5 min cooldown
+          }
+
+          if (active && dist > exitR && !actedOut.has(active.id)) {
+            actedOut.add(active.id);
+            const res = await fetch('/api/attendance', {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId: active.id, checkOutTime: new Date().toISOString(), location: { lat: latN, lng: lngN } }),
+            });
+            if (res.ok) {
+              setAutoNotif({ msg: `Auto checked out from ${ws.name}`, ok: false });
+              actedIn.delete(wsId); // allow re-entry
+            }
+          }
+        }
+      } catch { /* silent */ }
+    };
+
+    const watchId = navigator.geolocation.watchPosition(handlePosition, () => {}, { enableHighAccuracy: true, maximumAge: 30000 });
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [employeeRecord, isAdminView]);
 
   const tableRows = useMemo(() => myProjects.map((p, idx) => {
     const dayHours: Record<string,number> = {};
@@ -154,7 +487,7 @@ export default function EmployeePage() {
       } else {
         await fetch('/api/time-entries', {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ employeeId:user.id, projectId:row.projectId,
+          body: JSON.stringify({ employeeId: employeeRecord?.id, projectId:row.projectId,
             workDate:editCell.dateStr, hours, timeType:'Regular Hours', billable:true }),
         });
       }
@@ -176,7 +509,7 @@ export default function EmployeePage() {
     </div>
   );
 
-  const canEdit = status === 'Draft';
+  const canEdit = !isAdminView && status === 'Draft';
   const ss      = STATUS_STYLE[status];
 
   return (
@@ -236,6 +569,13 @@ export default function EmployeePage() {
           </button>
           <div style={{width:'1px', height:'16px', background:C.border}}/>
           <span className="text-xs" style={{color:C.t3}}>{authUser?.email}</span>
+          {!isAdminView && (
+            <button onClick={() => setShowGeofence(true)}
+              className="px-3 py-1.5 text-xs rounded-lg font-semibold transition-colors"
+              style={{background:'rgba(13,148,136,0.15)', color:C.teal, border:`1px solid rgba(13,148,136,0.35)`}}>
+              📍 Attendance
+            </button>
+          )}
           <button onClick={() => setShowChangePwd(true)}
             className="px-3 py-1.5 text-xs rounded-lg transition-colors"
             style={{background:C.elev, color:C.t2, border:`1px solid ${C.border}`}}>
@@ -248,6 +588,29 @@ export default function EmployeePage() {
           </button>
         </div>
       </div>
+
+      {/* ── auto-tracking notification ── */}
+      {autoNotif && !isAdminView && (
+        <div style={{ background: autoNotif.ok ? 'rgba(13,148,136,0.12)' : 'rgba(217,119,6,0.12)', borderBottom: `1px solid ${autoNotif.ok ? 'rgba(13,148,136,0.3)' : 'rgba(217,119,6,0.3)'}`, padding: '7px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '0.75rem', color: autoNotif.ok ? C.teal : C.amber }}>
+            📍 {autoNotif.msg}
+          </span>
+          <button onClick={() => setAutoNotif(null)} style={{ background: 'none', border: 'none', color: autoNotif.ok ? C.teal : C.amber, cursor: 'pointer', fontSize: '0.85rem' }}>✕</button>
+        </div>
+      )}
+
+      {/* ── admin view banner ── */}
+      {isAdminView && (
+        <div style={{ background: 'rgba(99,102,241,0.1)', borderBottom: `1px solid rgba(99,102,241,0.25)`, padding: '8px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '0.75rem', color: '#a5b4fc' }}>
+            Viewing as admin — <strong>{employeeRecord?.name}</strong> ({employeeRecord?.email}) · Read-only
+          </span>
+          <button onClick={() => router.replace('/admin')}
+            style={{ fontSize: '0.72rem', color: '#a5b4fc', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer' }}>
+            ← Back to Admin
+          </button>
+        </div>
+      )}
 
       {/* ── summary strip ── */}
       <div className="px-6 py-4" style={{borderBottom:`1px solid ${C.border}`}}>
@@ -295,8 +658,8 @@ export default function EmployeePage() {
             <div style={{borderTop:`1px solid ${C.border}`}} className="px-5 py-4 grid grid-cols-3 gap-5">
               <div>
                 <p className="text-[11px] uppercase tracking-wider mb-1.5" style={{color:C.t3}}>Employee</p>
-                <p className="text-sm font-medium" style={{color:C.t1}}>{user.name}</p>
-                <p className="text-xs mt-0.5" style={{color:C.t2}}>{user.email}</p>
+                <p className="text-sm font-medium" style={{color:C.t1}}>{employeeRecord?.name ?? '—'}</p>
+                <p className="text-xs mt-0.5" style={{color:C.t2}}>{employeeRecord?.email ?? '—'}</p>
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-wider mb-1.5" style={{color:C.t3}}>Description</p>
@@ -462,6 +825,23 @@ export default function EmployeePage() {
     </div>
 
     {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+    {showGeofence && employeeRecord && (
+      <GeofenceModal
+        employeeId={employeeRecord.id}
+        onClose={() => { setShowGeofence(false); setAutoLat(''); setAutoLng(''); }}
+        initialLat={autoLat || undefined}
+        initialLng={autoLng || undefined}
+        autoCheck={!!(autoLat && autoLng)}
+      />
+    )}
     </>
+  );
+}
+
+export default function EmployeePage() {
+  return (
+    <Suspense>
+      <EmployeePageInner />
+    </Suspense>
   );
 }

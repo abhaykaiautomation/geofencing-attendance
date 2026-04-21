@@ -4,7 +4,16 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   try {
     const result = await queryDB('SELECT * FROM worksites ORDER BY id');
-    return NextResponse.json(result.rows);
+    const rows = result.rows.map((r: any) => ({
+      id:          r.id,
+      name:        r.name,
+      address:     r.address,
+      latitude:    parseFloat(r.latitude),
+      longitude:   parseFloat(r.longitude),
+      entryRadius: parseFloat(r.entry_radius),
+      exitRadius:  parseFloat(r.exit_radius),
+    }));
+    return NextResponse.json(rows);
   } catch (error) {
     console.error('Error fetching worksites:', error);
     return NextResponse.json({ error: 'Failed to fetch worksites' }, { status: 500 });

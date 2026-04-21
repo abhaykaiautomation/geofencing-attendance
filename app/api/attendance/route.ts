@@ -72,13 +72,16 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { sessionId, checkOutTime, location } = body;
 
-    const durationMinutes = Math.round(
-      (new Date(checkOutTime).getTime() - new Date(checkOutTime).getTime()) / 60000
-    );
+    // Fetch check_in_time to compute duration
+    const existing = await queryDB('SELECT check_in_time FROM attendance_sessions WHERE id = $1', [sessionId]);
+    const checkInTime = existing.rows[0]?.check_in_time;
+    const durationMinutes = checkInTime
+      ? Math.round((new Date(checkOutTime).getTime() - new Date(checkInTime).getTime()) / 60000)
+      : null;
 
     const result = await queryDB(
       'UPDATE attendance_sessions SET check_out_time = $1, check_out_latitude = $2, check_out_longitude = $3, duration_minutes = $4 WHERE id = $5 RETURNING *',
-      [checkOutTime, location.lat, location.lng, durationMinutes, sessionId]
+      [checkOutTime, location?.lat ?? null, location?.lng ?? null, durationMinutes, sessionId]
     );
 
     return NextResponse.json(result.rows[0]);
