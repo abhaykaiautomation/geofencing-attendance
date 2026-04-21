@@ -1,29 +1,13 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { useEffect, useState, ReactNode } from 'react';
 import { User, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { UserRole } from '../contexts/AuthContext';
-
-interface AuthContextType {
-  user: User | null;
-  role: UserRole;
-  loading: boolean;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  role: null,
-  loading: true,
-  signOut: async () => {},
-});
-
-export const useAuth = () => useContext(AuthContext);
+import { AuthContext, UserRole } from '../contexts/AuthContext';
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser]     = useState<User | null>(null);
-  const [role, setRole]     = useState<UserRole>(null);
+  const [user, setUser]       = useState<User | null>(null);
+  const [role, setRole]       = useState<UserRole>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,7 +21,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const emp = await res.json();
             setRole(emp.role === 'admin' ? 'admin' : 'employee');
           } else {
-            // Employee record not found — default to 'employee'
             setRole('employee');
           }
         } catch {

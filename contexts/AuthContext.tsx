@@ -4,14 +4,14 @@ import { User } from 'firebase/auth';
 
 export type UserRole = 'admin' | 'employee' | null;
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   role: UserRole;
   loading: boolean;
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({
+export const AuthContext = createContext<AuthContextType>({
   user: null,
   role: null,
   loading: true,

@@ -612,12 +612,12 @@ const TABS = [
 ];
 
 export default function AdminPage() {
-  const { user, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!user) router.replace('/login');
-  }, [user, router]);
+    if (!loading && !user) router.replace('/login');
+  }, [user, loading, router]);
   const [activeTab, setActiveTab] = useState('worksites');
   const [worksites, setWorksites]   = useState<Worksite[]>([]);
   const [employees, setEmployees]   = useState<Employee[]>([]);
