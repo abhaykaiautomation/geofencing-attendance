@@ -523,4 +523,4 @@ geofencing/
 
 ## License
 
-MIT
+© RRS Enterprise. All rights reserved. Unauthorized use, reproduction, or distribution of this software is strictly prohibited.
