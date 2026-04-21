@@ -292,6 +292,7 @@ function EmployeePageInner() {
   const [employeeRecord, setEmployeeRecord] = useState<{ id: string; name: string; email: string } | null>(null);
 
   const [weekStart, setWeekStart]     = useState<Date>(() => getMonday(new Date()));
+  const [dataRange, setDataRange]     = useState<{ minDate: string | null; maxDate: string | null }>({ minDate: null, maxDate: null });
   const [myProjects, setMyProjects]   = useState<EmployeeProject[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -332,8 +333,22 @@ function EmployeePageInner() {
           employee = await res.json();
         }
         setEmployeeRecord(employee);
-        const projRes = await fetch(`/api/projects/members?employeeId=${employee.id}`);
-        if (projRes.ok) setMyProjects(await projRes.json());
+        const [projRes, rangeRes] = await Promise.all([
+          fetch(`/api/projects/members?employeeId=${employee.id}`),
+          fetch(`/api/time-entries?employeeId=${employee.id}&range=true`),
+        ]);
+        if (projRes.ok)  setMyProjects(await projRes.json());
+        if (rangeRes.ok) {
+          const range = await rangeRes.json();
+          setDataRange(range);
+          // If current week has no data but there is data, jump to the most recent week that has data
+          if (range.maxDate) {
+            const todayMonday = getMonday(new Date());
+            const maxMonday   = getMonday(new Date(range.maxDate + 'T12:00:00'));
+            // Show the latest data week (but never future beyond maxDate's week)
+            if (maxMonday < todayMonday) setWeekStart(maxMonday);
+          }
+        }
       } catch(e) { console.error(e); }
       finally { setLoading(false); }
     })();
@@ -464,6 +479,13 @@ function EmployeePageInner() {
   const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); setSelected(new Set()); };
   const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); setSelected(new Set()); };
 
+  // Disable Prev if minDate is within or after current week's Monday
+  // Disable Next if maxDate is before the next week's Monday
+  const prevWeekStart = new Date(weekStart); prevWeekStart.setDate(weekStart.getDate() - 7);
+  const nextWeekStart = new Date(weekStart); nextWeekStart.setDate(weekStart.getDate() + 7);
+  const canGoPrev = dataRange.minDate ? dataRange.minDate < toDateStr(weekStart) : false;
+  const canGoNext = dataRange.maxDate ? dataRange.maxDate >= toDateStr(nextWeekStart) : false;
+
   const allSel    = tableRows.length > 0 && selected.size === tableRows.length;
   const toggleAll = () => setSelected(allSel ? new Set() : new Set(tableRows.map(r => r.idx)));
   const toggleRow = (idx: number) => { const s=new Set(selected); s.has(idx)?s.delete(idx):s.add(idx); setSelected(s); };
@@ -540,12 +562,10 @@ function EmployeePageInner() {
         </div>
 
         <div className="flex items-center gap-2">
-          {[{label:'◀ Prev', fn:prevWeek},{label:'Next ▶', fn:nextWeek}].map(b => (
-            <button key={b.label} onClick={b.fn}
-              className="px-3 py-1.5 text-xs rounded-lg transition-colors"
-              style={{background:C.elev, color:C.t2, border:`1px solid ${C.border}`}}
-              onMouseEnter={e=>(e.currentTarget.style.background=C.elev)}
-              onMouseLeave={e=>(e.currentTarget.style.background=C.elev)}>
+          {([{label:'◀ Prev', fn:prevWeek, enabled:canGoPrev},{label:'Next ▶', fn:nextWeek, enabled:canGoNext}] as const).map(b => (
+            <button key={b.label} onClick={b.fn} disabled={!b.enabled}
+              className="px-3 py-1.5 text-xs rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              style={{background:C.elev, color:b.enabled ? C.t2 : C.t3, border:`1px solid ${C.border}`}}>
               {b.label}
             </button>
           ))}

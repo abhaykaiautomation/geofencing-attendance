@@ -14,15 +14,31 @@ const mapRow = (r: any) => ({
 });
 
 // GET /api/time-entries?employeeId=X&startDate=Y&endDate=Z
+// GET /api/time-entries?employeeId=X&range=true  → { minDate, maxDate }
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const employeeId = searchParams.get('employeeId');
   const startDate  = searchParams.get('startDate');
   const endDate    = searchParams.get('endDate');
+  const rangeOnly  = searchParams.get('range') === 'true';
 
   if (!employeeId) return NextResponse.json({ error: 'employeeId is required' }, { status: 400 });
 
   try {
+    // Return only min/max dates — used by UI to enable/disable prev-next navigation
+    if (rangeOnly) {
+      const result = await queryDB(
+        `SELECT MIN(work_date) AS min_date, MAX(work_date) AS max_date
+         FROM time_entries WHERE employee_id = $1`,
+        [employeeId]
+      );
+      const r = result.rows[0];
+      return NextResponse.json({
+        minDate: r.min_date ?? null,
+        maxDate: r.max_date ?? null,
+      });
+    }
+
     let query = `
       SELECT te.*, p.name AS project_name
       FROM time_entries te
